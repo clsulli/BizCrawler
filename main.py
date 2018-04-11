@@ -7,16 +7,24 @@ Clint Sullivan
 All Rights Reserved
 """
 
-from BizCrawler import finder
+from BizCrawler import leadGenerator
 from BizCrawler import detailer
+import json
+import requests
 
-fb = finder()
-dt = detailer()
+pageSpeedsAPI = "AIzaSyCpX0WJZBIlYg8FHT4GkGB1ZgGABEQzepE"
 
-sampleURL = "https://www.yelp.com/biz/simmering-james-md-maryville-3?osq=Doctors"
+detail = detailer()
 
-query = fb.query("Doctors", "62025")
-detail = dt.detail(sampleURL)
+api_key = 'AIzaSyCpX0WJZBIlYg8FHT4GkGB1ZgGABEQzepE'  # Add API key. Found here: https://console.developers.google.com/apis/credentials/key/
+base = 'http://example.com'
+locale_code = 'en_US'
+
+speedRes = detail.get_insights_json(api_key=api_key, device_type="desktop", local=locale_code, page_url="https://www.procryoplus.com")
+print(speedRes)
+
+lg = leadGenerator()
+lg.find("Doctors", "62025", 4)
 
 
 
