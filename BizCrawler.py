@@ -210,7 +210,7 @@ class detailer:
 
    def detail(self, url):
        scraped_data = self.parse(url)
-       yelp_id = url.split('/')[-1]
+       yelp_id = url.split('/')[-1].strip()
        with open("scraped_data_%s.json" % yelp_id, 'w') as fp:
           json.dump(scraped_data, fp, indent = 4)
 
