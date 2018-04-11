@@ -7,6 +7,8 @@ import re
 import argparse
 import urllib.parse
 import json
+from multiprocessing import Pool
+from multiprocessing.dummy import Pool as ThreadPool
 
 #TODO Multithreading
 #TODO Email Scraping
@@ -17,6 +19,8 @@ class leadGenerator:
         self.detailer = detailer()
 
     def find(self, search_query, zipcode, numOfPages):
+        pool = ThreadPool(10)
+
         yelp_url = "https://www.yelp.com/search?find_desc=%s&find_loc=%s&start=%s" % (search_query, zipcode, 0)
         possiblePages = self.finder.totalPages(yelp_url)
 
@@ -31,9 +35,11 @@ class leadGenerator:
         for line in csvFile:
             listings.append(line['url'])
 
-        for listing in range(len(listings)):
-            self.detailer.detail(listings[listing])
-
+        # for listing in range(len(listings)):
+        #     self.detailer.detail(listings[listing])
+        pool.map(self.detailer.detail, listings)
+        pool.close()
+        pool.join()
 
 class finder:
     """
@@ -65,7 +71,7 @@ class finder:
         parser = html.fromstring(response)
         listing = parser.xpath("//li[@class='regular-search-result']")
 
-        scraped_datas=[]
+        scraped_datas = []
 
         for results in listing:
             # raw_position = results.xpath(".//span[@class='indexed-biz-name']/text()")
@@ -120,7 +126,7 @@ class finder:
         search_query = search_query
         parseList = []
 
-        for i in range(1, numOfPages):
+        for i in range(1, numOfPages+1):
             startIdx = i*10
             yelp_url  = "https://www.yelp.com/search?find_desc=%s&find_loc=%s&start=%s"%(search_query,place,startIdx)
             print ("Retrieving :",yelp_url)
@@ -136,36 +142,6 @@ class finder:
                     writer.writerow(data)
 
         return "Listings/scraped_yelp_results_for_%s_%s.csv"%(search_query, place)
-# if __name__=="__main__":
-#    argparser = argparse.ArgumentParser()
-#    argparser.add_argument('place',help = 'Location/ Address/ zip code')
-#    search_query_help = """Available search queries are:\n
-#                      Restaurants,\n
-#                      Breakfast & Brunch,\n
-#                      Coffee & Tea,\n
-#                      Delivery,
-#                      Reservations"""
-#    argparser.add_argument('search_query',help = search_query_help)
-#    args = argparser.parse_args()
-#    place = args.place
-#    search_query = args.search_query
-#    startIdx = str(0)
-#    parseList = []
-#    yelp_url  = "https://www.yelp.com/search?find_desc=%s&find_loc=%s&start=%s"%(search_query,place,startIdx)
-#    print ("Retrieving :",yelp_url)
-#    parseList.append(parse(yelp_url))
-#    startIdx = str(10)
-#    yelp_url = "https://www.yelp.com/search?find_desc=%s&find_loc=%s&start=%s"%(search_query,place,startIdx)
-#    parseList.append(parse(yelp_url))
-#    print ("Writing data to output file")
-#    with open("scraped_yelp_results_for_%s.csv"%(place),"w") as fp:
-#       fieldnames= ['business_name','rank','review_count','categories','rating','address','reservation_available','accept_pickup','price_range','url']
-#       writer = csv.DictWriter(fp,fieldnames=fieldnames)
-#       writer.writeheader()
-#       for parse in parseList:
-#          for data in parse:
-#             writer.writerow(data)
-
 
 class detailer:
 
@@ -179,6 +155,14 @@ class detailer:
 
         return return_json
 
+    def rateSite(self, url):
+        api_key = 'xxxx'  # Add API key. Found here: https://console.developers.google.com/apis/credentials/key/
+        locale_code = 'en_US'
+
+        speedRes = self.get_insights_json(api_key=api_key, device_type="desktop", local=locale_code, page_url=url)
+        speed = speedRes['ruleGroups']['SPEED']['score']
+        return speed
+
     def parse(self, url):
         headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.90 Safari/537.36'}
@@ -186,29 +170,12 @@ class detailer:
         parser = html.fromstring(response)
         print("Parsing the page")
         raw_name = parser.xpath("//h1[contains(@class,'page-title')]//text()")
-        # raw_claimed = parser.xpath("//span[contains(@class,'claim-status_icon--claimed')]/parent::div/text()")
-        # raw_reviews = parser.xpath(
-        #     "//div[contains(@class,'biz-main-info')]//span[contains(@class,'review-count rating-qualifier')]//text()")
-        # raw_category = parser.xpath(
-        #     '//div[contains(@class,"biz-page-header")]//span[@class="category-str-list"]//a/text()')
-        # hours_table = parser.xpath("//table[contains(@class,'hours-table')]//tr")
         details_table = parser.xpath("//div[@class='short-def-list']//dl")
-        # raw_map_link = parser.xpath("//a[@class='biz-map-directions']/img/@src")
         raw_phone = parser.xpath(".//span[@class='biz-phone']//text()")
         raw_address = parser.xpath('//div[@class="mapbox-text"]//div[contains(@class,"map-box-address")]//text()')
         raw_wbsite_link = parser.xpath("//span[contains(@class,'biz-website')]/a/@href")
-        # raw_price_range = parser.xpath("//dd[contains(@class,'price-description')]//text()")
-        # raw_health_rating = parser.xpath("//dd[contains(@class,'health-score-description')]//text()")
-        # rating_histogram = parser.xpath("//table[contains(@class,'histogram')]//tr[contains(@class,'histogram_row')]")
         raw_ratings = parser.xpath("//div[contains(@class,'biz-page-header')]//div[contains(@class,'rating')]/@title")
 
-        # working_hours = []
-        # for hours in hours_table:
-        #     raw_day = hours.xpath(".//th//text()")
-        #     raw_timing = hours.xpath("./td//text()")
-        #     day = ''.join(raw_day).strip()
-        #     timing = ''.join(raw_timing).strip()
-        #     working_hours.append({day: timing})
         info = []
         for details in details_table:
             raw_description_key = details.xpath('.//dt//text()')
@@ -241,19 +208,15 @@ class detailer:
         else:
             website = ''
 
-        # if raw_map_link:
-        #     decoded_map_url = urllib.parse.unquote(raw_map_link[0])
-        #     map_coordinates = re.findall("center=([+-]?\d+.\d+,[+-]?\d+\.\d+)", decoded_map_url)[0].split(',')
-        #     latitude = map_coordinates[0]
-        #     longitude = map_coordinates[1]
-        # else:
-        #     latitude = ''
-        #     longitude = ''
-
         if raw_ratings:
             ratings = re.findall("\d+[.,]?\d+", cleaned_ratings)[0]
         else:
             ratings = 0
+
+        if website != '':
+            score = self.rateSite(website)
+        else:
+            score = 0
 
         data = {#'working_hours': working_hours,
                 #'info': info,
@@ -268,6 +231,7 @@ class detailer:
                 #'reviews': reviews,
                 #'category': category,
                 'website': website,
+                'score': score,
                 #'latitude': latitude,
                 #'longitude': longitude,
                 'url': url
